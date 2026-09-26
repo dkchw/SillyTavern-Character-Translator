@@ -51,7 +51,8 @@ CRITICAL INSTRUCTIONS:
 1. Maintain the character's original voice, style, emotional tone, and nuances.
 2. Preserve all Markdown, formatting, quotation marks, and line breaks.
 3. DO NOT translate SillyTavern macro tags and control tokens. Keep them EXACTLY as they appear: {{char}}, {{user}}, {{original}}, <START>, <start>, <bot>, <user>, etc.
-4. Output ONLY the raw translated text. Never provide any conversational intro, outro, notes, explanations, or quotes around the whole response.`;
+4. Correct any grammatical errors or awkward phrasing in the original text, and naturalize the expressions so they read fluently and idiomatically in ${targetLanguage}.
+5. Output ONLY the raw translated text. Never provide any conversational intro, outro, notes, explanations, or quotes around the whole response.`;
 
     try {
         const result = await generateRaw({
