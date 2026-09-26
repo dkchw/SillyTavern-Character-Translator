@@ -47,6 +47,42 @@
     color: var(--SmartThemeQuoteColor, #79b8ff);
 }
 
+.st-char-trans-fields-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.st-char-trans-fields-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.st-char-trans-action-btn {
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.1));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+    color: var(--SmartThemeBodyColor, inherit);
+    transition: background 0.2s ease;
+}
+
+.st-char-trans-action-btn:hover {
+    background: var(--SmartThemeQuoteColor, #4facfe);
+    color: #fff;
+}
+
+.st-char-trans-blank-badge {
+    font-size: 0.8em;
+    opacity: 0.65;
+    font-style: italic;
+    color: var(--SmartThemeEmColor, #ffb86c);
+    margin-left: 2px;
+}
+
 .st-char-trans-fields-container {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

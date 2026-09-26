@@ -102,19 +102,35 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
 
     progressCallback('Character cloned. Starting field translations...', 15);
 
-    // Prepare fields to translate
-    const fieldsToProcess = [];
-    if (selectedFields.name) fieldsToProcess.push({ key: 'name', label: 'Name', val: originalData.name || '' });
-    if (selectedFields.description) fieldsToProcess.push({ key: 'description', label: 'Description', val: originalData.description || '' });
-    if (selectedFields.personality) fieldsToProcess.push({ key: 'personality', label: 'Personality', val: originalData.personality || '' });
-    if (selectedFields.scenario) fieldsToProcess.push({ key: 'scenario', label: 'Scenario', val: originalData.scenario || '' });
-    if (selectedFields.first_mes) fieldsToProcess.push({ key: 'first_mes', label: 'First Message', val: originalData.first_mes || '' });
-    if (selectedFields.mes_example) fieldsToProcess.push({ key: 'mes_example', label: 'Example Dialogue', val: originalData.mes_example || '' });
-    if (selectedFields.creator_notes) fieldsToProcess.push({ key: 'creator_notes', label: 'Creator Notes', val: originalData.creator_notes || '' });
-    if (selectedFields.system_prompt) fieldsToProcess.push({ key: 'system_prompt', label: 'System Prompt', val: originalData.system_prompt || '' });
-    if (selectedFields.post_history_instructions) fieldsToProcess.push({ key: 'post_history_instructions', label: 'Post History Instructions', val: originalData.post_history_instructions || '' });
+    // Prepare fields to translate - automatically ignore blank / whitespace-only fields
+    const candidateFields = [
+        { key: 'name', label: 'Name', val: originalData.name || '' },
+        { key: 'description', label: 'Description', val: originalData.description || '' },
+        { key: 'personality', label: 'Personality', val: originalData.personality || '' },
+        { key: 'scenario', label: 'Scenario', val: originalData.scenario || '' },
+        { key: 'first_mes', label: 'First Message', val: originalData.first_mes || '' },
+        { key: 'mes_example', label: 'Example Dialogue', val: originalData.mes_example || '' },
+        { key: 'creator_notes', label: 'Creator Notes', val: originalData.creator_notes || '' },
+        { key: 'system_prompt', label: 'System Prompt', val: originalData.system_prompt || '' },
+        { key: 'post_history_instructions', label: 'Post History Instructions', val: originalData.post_history_instructions || '' },
+    ];
 
-    const totalSteps = fieldsToProcess.length + (selectedFields.alternate_greetings && Array.isArray(originalData.alternate_greetings) ? originalData.alternate_greetings.length : 0) + 1;
+    // Filter to selected fields that actually contain non-blank content
+    const fieldsToProcess = candidateFields.filter(item => {
+        if (!selectedFields[item.key]) return false;
+        return typeof item.val === 'string' && item.val.trim().length > 0;
+    });
+
+    // Alternate Greetings - only process non-blank entries
+    const rawGreetings = Array.isArray(originalData.alternate_greetings) ? originalData.alternate_greetings : [];
+    let translatedGreetings = [...rawGreetings];
+    const greetingsToProcess = selectedFields.alternate_greetings
+        ? rawGreetings
+            .map((text, idx) => ({ index: idx, text }))
+            .filter(item => typeof item.text === 'string' && item.text.trim().length > 0)
+        : [];
+
+    const totalSteps = Math.max(1, fieldsToProcess.length + greetingsToProcess.length);
     let currentStep = 0;
 
     const translatedResults = {};
@@ -133,18 +149,12 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
         }
     }
 
-    // Alternate Greetings
-    let translatedGreetings = [];
-    if (selectedFields.alternate_greetings && Array.isArray(originalData.alternate_greetings) && originalData.alternate_greetings.length > 0) {
-        for (let i = 0; i < originalData.alternate_greetings.length; i++) {
-            currentStep++;
-            const pct = Math.round(15 + (currentStep / totalSteps) * 75);
-            progressCallback(`Translating Alternate Greeting ${i + 1}/${originalData.alternate_greetings.length}...`, pct);
-            const transGreeting = await translateText(originalData.alternate_greetings[i], `Alternate Greeting ${i + 1}`, targetLanguage, customInstructions);
-            translatedGreetings.push(transGreeting);
-        }
-    } else if (Array.isArray(originalData.alternate_greetings)) {
-        translatedGreetings = [...originalData.alternate_greetings];
+    for (const greetingItem of greetingsToProcess) {
+        currentStep++;
+        const pct = Math.round(15 + (currentStep / totalSteps) * 75);
+        progressCallback(`Translating Alternate Greeting ${greetingItem.index + 1} (${currentStep}/${totalSteps})...`, pct);
+        const transGreeting = await translateText(greetingItem.text, `Alternate Greeting ${greetingItem.index + 1}`, targetLanguage, customInstructions);
+        translatedGreetings[greetingItem.index] = transGreeting;
     }
 
     progressCallback('Saving translated character data...', 92);
@@ -174,15 +184,17 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
     const extensionsPayload = structuredClone(originalData.extensions || {});
     formData.append('extensions', JSON.stringify(extensionsPayload));
 
-    // Send edit request
+    // Send edit request with omitContentType: true so the browser sets the multipart/form-data boundary
     const editResponse = await fetch('/api/characters/edit', {
         method: 'POST',
-        headers: getRequestHeaders(),
+        headers: getRequestHeaders({ omitContentType: true }),
         body: formData,
+        cache: 'no-cache',
     });
 
     if (!editResponse.ok) {
-        throw new Error(`Failed to update translated character: ${editResponse.statusText}`);
+        const errorText = await editResponse.text().catch(() => '');
+        throw new Error(`Failed to update translated character: ${editResponse.statusText}${errorText ? ` (${errorText})` : ''}`);
     }
 
     progressCallback('Refreshing character list...', 98);
@@ -260,19 +272,30 @@ async function openTranslationModal() {
         </div>
 
         <div>
-            <b>Fields to Translate:</b>
-            <div class="st-char-trans-fields-container">
-                <label><input type="checkbox" id="field_name" ${settings.fields.name ? 'checked' : ''} /> Character Name</label>
-                <label><input type="checkbox" id="field_desc" ${settings.fields.description ? 'checked' : ''} /> Description</label>
-                <label><input type="checkbox" id="field_personality" ${settings.fields.personality ? 'checked' : ''} /> Personality</label>
-                <label><input type="checkbox" id="field_scenario" ${settings.fields.scenario ? 'checked' : ''} /> Scenario</label>
-                <label><input type="checkbox" id="field_first_mes" ${settings.fields.first_mes ? 'checked' : ''} /> First Message</label>
-                <label><input type="checkbox" id="field_mes_example" ${settings.fields.mes_example ? 'checked' : ''} /> Dialogue Examples</label>
-                <label><input type="checkbox" id="field_greetings" ${settings.fields.alternate_greetings ? 'checked' : ''} /> Alternate Greetings</label>
-                <label><input type="checkbox" id="field_system_prompt" ${settings.fields.system_prompt ? 'checked' : ''} /> System Prompt</label>
-                <label><input type="checkbox" id="field_post_history" ${settings.fields.post_history_instructions ? 'checked' : ''} /> Post-History Note</label>
-                <label><input type="checkbox" id="field_creator_notes" ${settings.fields.creator_notes ? 'checked' : ''} /> Creator Notes</label>
+            <div class="st-char-trans-fields-header">
+                <b>Fields to Translate:</b>
+                <div class="st-char-trans-fields-actions">
+                    <button type="button" id="st_trans_select_all_btn" class="st-char-trans-action-btn" title="Tick all fields">
+                        <i class="fa-solid fa-check-double"></i> Select All
+                    </button>
+                    <button type="button" id="st_trans_deselect_all_btn" class="st-char-trans-action-btn" title="Untick all fields">
+                        <i class="fa-solid fa-square"></i> Deselect All
+                    </button>
+                </div>
             </div>
+            <div class="st-char-trans-fields-container" id="st_trans_fields_container">
+                <label><input type="checkbox" id="field_name" ${settings.fields.name ? 'checked' : ''} /> Character Name <span id="badge_field_name" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_desc" ${settings.fields.description ? 'checked' : ''} /> Description <span id="badge_field_desc" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_personality" ${settings.fields.personality ? 'checked' : ''} /> Personality <span id="badge_field_personality" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_scenario" ${settings.fields.scenario ? 'checked' : ''} /> Scenario <span id="badge_field_scenario" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_first_mes" ${settings.fields.first_mes ? 'checked' : ''} /> First Message <span id="badge_field_first_mes" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_mes_example" ${settings.fields.mes_example ? 'checked' : ''} /> Dialogue Examples <span id="badge_field_mes_example" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_greetings" ${settings.fields.alternate_greetings ? 'checked' : ''} /> Alternate Greetings <span id="badge_field_greetings" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_system_prompt" ${settings.fields.system_prompt ? 'checked' : ''} /> System Prompt <span id="badge_field_system_prompt" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_post_history" ${settings.fields.post_history_instructions ? 'checked' : ''} /> Post-History Note <span id="badge_field_post_history" class="st-char-trans-blank-badge"></span></label>
+                <label><input type="checkbox" id="field_creator_notes" ${settings.fields.creator_notes ? 'checked' : ''} /> Creator Notes <span id="badge_field_creator_notes" class="st-char-trans-blank-badge"></span></label>
+            </div>
+            <small class="notes" style="display: block; margin-top: 6px;"><i class="fa-solid fa-circle-info"></i> Blank fields are automatically ignored and skipped during translation.</small>
         </div>
 
         <div id="st_trans_progress_area" class="st-char-trans-progress-box">
@@ -294,10 +317,46 @@ async function openTranslationModal() {
     });
 
     setTimeout(() => {
-        const charSelect = $('#st_trans_char_select');
-        const previewImg = $('#st_trans_preview_img');
-        const langSelect = $('#st_trans_target_lang');
-        const customLangInput = $('#st_trans_custom_lang');
+        const dlg = $(popup.dlg);
+        const charSelect = dlg.find('#st_trans_char_select');
+        const previewImg = dlg.find('#st_trans_preview_img');
+        const langSelect = dlg.find('#st_trans_target_lang');
+        const customLangInput = dlg.find('#st_trans_custom_lang');
+        const selectAllBtn = dlg.find('#st_trans_select_all_btn');
+        const deselectAllBtn = dlg.find('#st_trans_deselect_all_btn');
+        const fieldsContainer = dlg.find('#st_trans_fields_container');
+
+        const updateBlankBadges = (charIdx) => {
+            const currentChars = SillyTavern.getContext().characters;
+            const charObj = currentChars[charIdx];
+            const data = charObj?.data || charObj || {};
+
+            const checkMap = {
+                field_name: data.name,
+                field_desc: data.description,
+                field_personality: data.personality,
+                field_scenario: data.scenario,
+                field_first_mes: data.first_mes,
+                field_mes_example: data.mes_example,
+                field_greetings: (Array.isArray(data.alternate_greetings) && data.alternate_greetings.some(g => typeof g === 'string' && g.trim())) ? 'valid' : '',
+                field_system_prompt: data.system_prompt,
+                field_post_history: data.post_history_instructions,
+                field_creator_notes: data.creator_notes,
+            };
+
+            for (const [id, val] of Object.entries(checkMap)) {
+                const isBlank = !val || (typeof val === 'string' && !val.trim());
+                const badge = dlg.find(`#badge_${id}`);
+                if (isBlank) {
+                    badge.text('(blank - will skip)').show();
+                } else {
+                    badge.text('').hide();
+                }
+            }
+        };
+
+        const initialIdx = Number(charSelect.val()) || currentCharId || 0;
+        updateBlankBadges(initialIdx);
 
         charSelect.on('change', () => {
             const selectedIdx = Number(charSelect.val());
@@ -306,6 +365,15 @@ async function openTranslationModal() {
             if (charObj?.avatar) {
                 previewImg.attr('src', `/characters/${charObj.avatar}`);
             }
+            updateBlankBadges(selectedIdx);
+        });
+
+        selectAllBtn.on('click', () => {
+            fieldsContainer.find('input[type="checkbox"]').prop('checked', true);
+        });
+
+        deselectAllBtn.on('click', () => {
+            fieldsContainer.find('input[type="checkbox"]').prop('checked', false);
         });
 
         langSelect.on('change', () => {
