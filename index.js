@@ -72,10 +72,13 @@ CRITICAL INSTRUCTIONS:
 }
 
 async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix, selectedFields, customInstructions, progressCallback) {
-    const { characters, getRequestHeaders, getCharacters } = SillyTavern.getContext();
+    const { characters, characterId, getRequestHeaders, getCharacters } = SillyTavern.getContext();
+    if (isNaN(charIndex) || charIndex < 0 || charIndex >= characters.length) {
+        charIndex = (typeof characterId === 'number' && characters[characterId]) ? characterId : 0;
+    }
     const originalChar = characters[charIndex];
     if (!originalChar) {
-        throw new Error('Selected character not found.');
+        throw new Error(`Selected character (index ${charIndex}) not found. Available characters: ${characters?.length || 0}`);
     }
 
     const originalData = originalChar.data || originalChar;
@@ -317,24 +320,32 @@ async function openTranslationModal() {
     const result = await popup.show();
 
     if (result === POPUP_RESULT.AFFIRMATIVE) {
-        const selectedIdx = Number($('#st_trans_char_select').val());
-        let targetLang = $('#st_trans_target_lang').val();
-        let customLang = $('#st_trans_custom_lang').val().trim();
-        let effectiveTarget = targetLang === 'custom' ? (customLang || 'Japanese') : targetLang;
-        const suffix = $('#st_trans_suffix_input').val();
-        const customPrompt = $('#st_trans_custom_prompt').val();
+        const charSelectEl = popup.dlg.querySelector('#st_trans_char_select');
+        const targetLangEl = popup.dlg.querySelector('#st_trans_target_lang');
+        const customLangEl = popup.dlg.querySelector('#st_trans_custom_lang');
+        const suffixEl = popup.dlg.querySelector('#st_trans_suffix_input');
+        const customPromptEl = popup.dlg.querySelector('#st_trans_custom_prompt');
+
+        const rawCharIdx = charSelectEl ? Number(charSelectEl.value) : NaN;
+        const selectedIdx = !isNaN(rawCharIdx) ? rawCharIdx : (currentCharId ?? 0);
+
+        const targetLang = targetLangEl?.value || 'Japanese';
+        const customLang = customLangEl?.value?.trim() || '';
+        const effectiveTarget = targetLang === 'custom' ? (customLang || 'Japanese') : targetLang;
+        const suffix = suffixEl?.value ?? ' [{lang}]';
+        const customPrompt = customPromptEl?.value ?? '';
 
         const selectedFields = {
-            name: $('#field_name').is(':checked'),
-            description: $('#field_desc').is(':checked'),
-            personality: $('#field_personality').is(':checked'),
-            scenario: $('#field_scenario').is(':checked'),
-            first_mes: $('#field_first_mes').is(':checked'),
-            mes_example: $('#field_mes_example').is(':checked'),
-            alternate_greetings: $('#field_greetings').is(':checked'),
-            system_prompt: $('#field_system_prompt').is(':checked'),
-            post_history_instructions: $('#field_post_history').is(':checked'),
-            creator_notes: $('#field_creator_notes').is(':checked'),
+            name: !!popup.dlg.querySelector('#field_name')?.checked,
+            description: !!popup.dlg.querySelector('#field_desc')?.checked,
+            personality: !!popup.dlg.querySelector('#field_personality')?.checked,
+            scenario: !!popup.dlg.querySelector('#field_scenario')?.checked,
+            first_mes: !!popup.dlg.querySelector('#field_first_mes')?.checked,
+            mes_example: !!popup.dlg.querySelector('#field_mes_example')?.checked,
+            alternate_greetings: !!popup.dlg.querySelector('#field_greetings')?.checked,
+            system_prompt: !!popup.dlg.querySelector('#field_system_prompt')?.checked,
+            post_history_instructions: !!popup.dlg.querySelector('#field_post_history')?.checked,
+            creator_notes: !!popup.dlg.querySelector('#field_creator_notes')?.checked,
         };
 
         // Persist settings
