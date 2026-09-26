@@ -1,24 +1,3 @@
-import {
-    eventSource,
-    event_types,
-    getRequestHeaders,
-    characters,
-    this_chid,
-    getCharacters,
-    selectCharacterById,
-    generateRaw,
-    renderExtensionTemplateAsync,
-    extension_settings,
-    saveSettingsDebounced,
-    Popup,
-    POPUP_TYPE,
-    POPUP_RESULT,
-    SlashCommandParser,
-    SlashCommand,
-    SlashCommandArgument,
-    ARGUMENT_TYPE,
-} from '../../../script.js';
-
 const MODULE_NAME = 'character_translator';
 const EXTENSION_DIR = 'third-party/SillyTavern-Character-Translator';
 
@@ -41,21 +20,24 @@ const defaultSettings = Object.freeze({
 });
 
 function getSettings() {
-    if (!extension_settings[MODULE_NAME]) {
-        extension_settings[MODULE_NAME] = structuredClone(defaultSettings);
+    const { extensionSettings } = SillyTavern.getContext();
+    if (!extensionSettings[MODULE_NAME]) {
+        extensionSettings[MODULE_NAME] = structuredClone(defaultSettings);
     }
     for (const key of Object.keys(defaultSettings)) {
-        if (!Object.hasOwn(extension_settings[MODULE_NAME], key)) {
-            extension_settings[MODULE_NAME][key] = defaultSettings[key];
+        if (!Object.hasOwn(extensionSettings[MODULE_NAME], key)) {
+            extensionSettings[MODULE_NAME][key] = defaultSettings[key];
         }
     }
-    return extension_settings[MODULE_NAME];
+    return extensionSettings[MODULE_NAME];
 }
 
 async function translateText(text, fieldName, targetLanguage) {
     if (!text || typeof text !== 'string' || !text.trim()) {
         return text || '';
     }
+
+    const { generateRaw } = SillyTavern.getContext();
 
     const systemPrompt = `You are a professional literary translator and character localization specialist.
 Translate the provided character card field ("${fieldName}") into ${targetLanguage}.
@@ -84,6 +66,7 @@ CRITICAL INSTRUCTIONS:
 }
 
 async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix, selectedFields, progressCallback) {
+    const { characters, getRequestHeaders, getCharacters } = SillyTavern.getContext();
     const originalChar = characters[charIndex];
     if (!originalChar) {
         throw new Error('Selected character not found.');
@@ -196,7 +179,8 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
     progressCallback('Refreshing character list...', 98);
     await getCharacters();
 
-    const newIndex = characters.findIndex(c => c.avatar === newAvatarUrl);
+    const freshChars = SillyTavern.getContext().characters;
+    const newIndex = freshChars.findIndex(c => c.avatar === newAvatarUrl);
     progressCallback('Done!', 100);
 
     return {
@@ -207,8 +191,9 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
 }
 
 async function openTranslationModal() {
+    const { characters, characterId, Popup, POPUP_TYPE, POPUP_RESULT, selectCharacterById, saveSettingsDebounced } = SillyTavern.getContext();
     const settings = getSettings();
-    const currentCharId = this_chid !== undefined ? this_chid : 0;
+    const currentCharId = characterId !== undefined ? characterId : 0;
 
     let charOptions = '';
     characters.forEach((char, idx) => {
@@ -291,7 +276,6 @@ async function openTranslationModal() {
         allowVerticalScrolling: true,
     });
 
-    // Handle popup events once rendered
     setTimeout(() => {
         const charSelect = $('#st_trans_char_select');
         const previewImg = $('#st_trans_preview_img');
@@ -300,7 +284,8 @@ async function openTranslationModal() {
 
         charSelect.on('change', () => {
             const selectedIdx = Number(charSelect.val());
-            const charObj = characters[selectedIdx];
+            const currentChars = SillyTavern.getContext().characters;
+            const charObj = currentChars[selectedIdx];
             if (charObj?.avatar) {
                 previewImg.attr('src', `/characters/${charObj.avatar}`);
             }
@@ -344,7 +329,6 @@ async function openTranslationModal() {
         settings.fields = selectedFields;
         saveSettingsDebounced();
 
-        // Run translation with blocking toast
         const progressToast = toastr.info('Cloning and translating character... Please wait.', 'Character Translator', {
             timeOut: 0,
             extendedTimeOut: 0,
@@ -377,7 +361,10 @@ async function openTranslationModal() {
     }
 }
 
-jQuery(async () => {
+// Extension Initialization
+(async function init() {
+    const { renderExtensionTemplateAsync, saveSettingsDebounced, eventSource, eventTypes, SlashCommandParser, SlashCommand } = SillyTavern.getContext();
+
     // 1. Render Extension Settings Drawer
     try {
         const settings = getSettings();
@@ -401,8 +388,8 @@ jQuery(async () => {
         console.error('[Character Translator] Failed to render settings template:', e);
     }
 
-    // 2. Add button in Character Management menu on APP_READY
-    eventSource.on(event_types.APP_READY, () => {
+    // 2. Add quick button in Character Management menu
+    const attachQuickButton = () => {
         const charButtons = $('#rm_character_import');
         if (charButtons.length && !$('#st_char_trans_quick_btn').length) {
             const btn = $(`
@@ -411,20 +398,27 @@ jQuery(async () => {
             btn.on('click', openTranslationModal);
             charButtons.after(btn);
         }
-    });
+    };
+
+    if (eventSource && eventTypes) {
+        eventSource.on(eventTypes.APP_READY, attachQuickButton);
+    }
+    attachQuickButton();
 
     // 3. Register Slash Command
     try {
-        SlashCommandParser.addCommandObject(SlashCommand.fromProps({
-            name: 'translate-character',
-            aliases: ['translatechar', 'clonetranslate'],
-            helpString: 'Opens the Character Translator modal to clone and translate a character.',
-            callback: async () => {
-                openTranslationModal();
-                return 'Character Translator opened.';
-            },
-        }));
+        if (SlashCommandParser && SlashCommand) {
+            SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+                name: 'translate-character',
+                aliases: ['translatechar', 'clonetranslate'],
+                helpString: 'Opens the Character Translator modal to clone and translate a character.',
+                callback: async () => {
+                    openTranslationModal();
+                    return 'Character Translator opened.';
+                },
+            }));
+        }
     } catch (e) {
         console.debug('[Character Translator] Slash command registration error:', e);
     }
-});
+})();
