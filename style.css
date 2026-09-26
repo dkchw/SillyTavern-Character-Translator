@@ -1,0 +1,100 @@
+/* SillyTavern-Character-Translator Styles */
+
+.st-char-translator-settings .st-char-trans-config-row {
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.st-char-trans-modal {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.st-char-trans-header-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.2));
+    border-radius: 8px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.1));
+}
+
+.st-char-trans-avatar-preview {
+    width: 64px;
+    height: 64px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.2));
+}
+
+.st-char-trans-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+}
+
+.st-char-trans-info .char-title {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--SmartThemeQuoteColor, #79b8ff);
+}
+
+.st-char-trans-fields-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin-top: 6px;
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.15));
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.1));
+}
+
+.st-char-trans-fields-container label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+
+.st-char-trans-progress-box {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 6px;
+    background: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.3));
+    border: 1px solid var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.15));
+    display: none;
+}
+
+.st-char-trans-progress-bar-bg {
+    width: 100%;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+
+.st-char-trans-progress-bar-fill {
+    width: 0%;
+    height: 100%;
+    background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+    transition: width 0.3s ease;
+}
+
+.st-char-trans-status-text {
+    font-size: 0.9em;
+    color: var(--SmartThemeEmColor, #ffb86c);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
