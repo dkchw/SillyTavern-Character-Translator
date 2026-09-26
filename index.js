@@ -3,8 +3,10 @@ const EXTENSION_DIR = 'third-party/SillyTavern-Character-Translator';
 
 const defaultSettings = Object.freeze({
     defaultLanguage: 'Japanese',
+    defaultLanguageCustom: '',
     nameSuffix: ' [{lang}]',
     autoSwitch: true,
+    customPromptInstructions: '',
     fields: {
         name: true,
         description: true,
@@ -32,15 +34,19 @@ function getSettings() {
     return extensionSettings[MODULE_NAME];
 }
 
-async function translateText(text, fieldName, targetLanguage) {
+async function translateText(text, fieldName, targetLanguage, customInstructions) {
     if (!text || typeof text !== 'string' || !text.trim()) {
         return text || '';
     }
 
     const { generateRaw } = SillyTavern.getContext();
 
+    const extraGuidance = customInstructions?.trim()
+        ? `\nADDITIONAL USER INSTRUCTIONS & GLOSSARY:\n${customInstructions.trim()}\n`
+        : '';
+
     const systemPrompt = `You are a professional literary translator and character localization specialist.
-Translate the provided character card field ("${fieldName}") into ${targetLanguage}.
+Translate the provided character card field ("${fieldName}") into ${targetLanguage}.${extraGuidance}
 CRITICAL INSTRUCTIONS:
 1. Maintain the character's original voice, style, emotional tone, and nuances.
 2. Preserve all Markdown, formatting, quotation marks, and line breaks.
@@ -65,7 +71,7 @@ CRITICAL INSTRUCTIONS:
     }
 }
 
-async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix, selectedFields, progressCallback) {
+async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix, selectedFields, customInstructions, progressCallback) {
     const { characters, getRequestHeaders, getCharacters } = SillyTavern.getContext();
     const originalChar = characters[charIndex];
     if (!originalChar) {
@@ -116,11 +122,11 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
         progressCallback(`Translating ${item.label} (${currentStep}/${totalSteps})...`, pct);
 
         if (item.key === 'name') {
-            const rawTrans = await translateText(item.val, item.label, targetLanguage);
+            const rawTrans = await translateText(item.val, item.label, targetLanguage, customInstructions);
             const suffix = nameSuffix ? nameSuffix.replace('{lang}', targetLanguage) : '';
             translatedResults[item.key] = `${rawTrans}${suffix}`;
         } else {
-            translatedResults[item.key] = await translateText(item.val, item.label, targetLanguage);
+            translatedResults[item.key] = await translateText(item.val, item.label, targetLanguage, customInstructions);
         }
     }
 
@@ -131,7 +137,7 @@ async function performCharacterTranslation(charIndex, targetLanguage, nameSuffix
             currentStep++;
             const pct = Math.round(15 + (currentStep / totalSteps) * 75);
             progressCallback(`Translating Alternate Greeting ${i + 1}/${originalData.alternate_greetings.length}...`, pct);
-            const transGreeting = await translateText(originalData.alternate_greetings[i], `Alternate Greeting ${i + 1}`, targetLanguage);
+            const transGreeting = await translateText(originalData.alternate_greetings[i], `Alternate Greeting ${i + 1}`, targetLanguage, customInstructions);
             translatedGreetings.push(transGreeting);
         }
     } else if (Array.isArray(originalData.alternate_greetings)) {
@@ -202,6 +208,8 @@ async function openTranslationModal() {
         charOptions += `<option value="${idx}" ${isSelected}>${charName}</option>`;
     });
 
+    const isCustomLang = settings.defaultLanguage === 'custom';
+
     const modalHtml = `
     <div class="st-char-trans-modal">
         <div class="st-char-trans-header-box">
@@ -231,10 +239,16 @@ async function openTranslationModal() {
                     <option value="Vietnamese" ${settings.defaultLanguage === 'Vietnamese' ? 'selected' : ''}>Vietnamese (Tiếng Việt)</option>
                     <option value="Arabic" ${settings.defaultLanguage === 'Arabic' ? 'selected' : ''}>Arabic (العربية)</option>
                     <option value="English" ${settings.defaultLanguage === 'English' ? 'selected' : ''}>English</option>
-                    <option value="custom">-- Custom Language --</option>
+                    <option value="custom" ${isCustomLang ? 'selected' : ''}>-- Custom Language --</option>
                 </select>
-                <input id="st_trans_custom_lang" type="text" class="text_pole" placeholder="Type language..." style="flex: 1; display: none;" />
+                <input id="st_trans_custom_lang" type="text" class="text_pole" value="${settings.defaultLanguageCustom || ''}" placeholder="Type language..." style="flex: 1; display: ${isCustomLang ? 'block' : 'none'};" />
             </div>
+        </div>
+
+        <div>
+            <label for="st_trans_custom_prompt"><b>Custom Prompt Instructions / Glossary:</b></label>
+            <textarea id="st_trans_custom_prompt" class="text_pole" rows="3" placeholder="e.g. Translate titles as Lord/Lady; preserve formal speech; maintain fictional terminology...">${settings.customPromptInstructions || ''}</textarea>
+            <small class="notes">Additional prompt rules injected into the translation model for this character.</small>
         </div>
 
         <div>
@@ -305,10 +319,10 @@ async function openTranslationModal() {
     if (result === POPUP_RESULT.AFFIRMATIVE) {
         const selectedIdx = Number($('#st_trans_char_select').val());
         let targetLang = $('#st_trans_target_lang').val();
-        if (targetLang === 'custom') {
-            targetLang = $('#st_trans_custom_lang').val().trim() || 'Japanese';
-        }
+        let customLang = $('#st_trans_custom_lang').val().trim();
+        let effectiveTarget = targetLang === 'custom' ? (customLang || 'Japanese') : targetLang;
         const suffix = $('#st_trans_suffix_input').val();
+        const customPrompt = $('#st_trans_custom_prompt').val();
 
         const selectedFields = {
             name: $('#field_name').is(':checked'),
@@ -325,7 +339,9 @@ async function openTranslationModal() {
 
         // Persist settings
         settings.defaultLanguage = targetLang;
+        settings.defaultLanguageCustom = customLang;
         settings.nameSuffix = suffix;
+        settings.customPromptInstructions = customPrompt;
         settings.fields = selectedFields;
         saveSettingsDebounced();
 
@@ -338,9 +354,10 @@ async function openTranslationModal() {
         try {
             const translationResult = await performCharacterTranslation(
                 selectedIdx,
-                targetLang,
+                effectiveTarget,
                 suffix,
                 selectedFields,
+                customPrompt,
                 (statusText, pct) => {
                     toastr.clear(progressToast);
                     toastr.info(`${statusText} (${pct}%)`, 'Translating Character', { timeOut: 3000 });
@@ -348,7 +365,7 @@ async function openTranslationModal() {
             );
 
             toastr.clear();
-            toastr.success(`Character "${translationResult.name}" successfully translated into ${targetLang}!`, 'Translation Complete');
+            toastr.success(`Character "${translationResult.name}" successfully translated into ${effectiveTarget}!`, 'Translation Complete');
 
             if (settings.autoSwitch && translationResult.newIndex !== -1) {
                 await selectCharacterById(translationResult.newIndex);
@@ -371,11 +388,27 @@ async function openTranslationModal() {
         const settingsHtml = await renderExtensionTemplateAsync(EXTENSION_DIR, 'settings', settings);
         $('#extensions_settings').append(settingsHtml);
 
-        $('#st_char_trans_open_btn').on('click', openTranslationModal);
-        $('#st_char_trans_default_lang').val(settings.defaultLanguage).on('change', function () {
+        const defaultLangSel = $('#st_char_trans_default_lang');
+        const customLangInp = $('#st_char_trans_custom_lang');
+
+        defaultLangSel.val(settings.defaultLanguage).on('change', function () {
             settings.defaultLanguage = $(this).val();
+            customLangInp.toggle(settings.defaultLanguage === 'custom');
             saveSettingsDebounced();
         });
+        customLangInp.val(settings.defaultLanguageCustom || '').on('input', function () {
+            settings.defaultLanguageCustom = $(this).val();
+            saveSettingsDebounced();
+        });
+        customLangInp.toggle(settings.defaultLanguage === 'custom');
+
+        $('#st_char_trans_custom_prompt').val(settings.customPromptInstructions || '').on('input', function () {
+            settings.customPromptInstructions = $(this).val();
+            saveSettingsDebounced();
+        });
+
+        $('#st_char_trans_open_btn').on('click', openTranslationModal);
+
         $('#st_char_trans_name_suffix').val(settings.nameSuffix).on('input', function () {
             settings.nameSuffix = $(this).val();
             saveSettingsDebounced();
